@@ -13,7 +13,7 @@ sns.set_theme(style="whitegrid")
 # ==========================================
 def generate_logs(n=15000):
     ips = [f"192.168.0.{random.randint(1, 255)}" for _ in range(50)]
-    ips += ["45.33.22.11", "185.212.131.44"]  # аномальні
+    ips += ["45.33.22.11", "185.212.131.44"]
 
     methods = ["GET", "POST", "HEAD"]
     urls = ["/", "/login", "/api", "/admin", "/config"]
@@ -34,7 +34,6 @@ def generate_logs(n=15000):
 
     df = pd.DataFrame(data)
 
-    # оптимізація
     df['method'] = df['method'].astype('category')
     df['url'] = df['url'].astype('category')
     df['status'] = df['status'].astype('int16')
@@ -73,8 +72,9 @@ def parse_chunk(lines):
     df['method'] = df['method'].astype('category')
     df['url'] = df['url'].astype('category')
 
+    # 🔥 ВАЖЛИВО: правильна обробка timestamp
     df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-    df.dropna(subset=['timestamp'], inplace=True)
+    df = df.dropna(subset=['timestamp'])
 
     return df
 
@@ -98,10 +98,18 @@ def load_large_log(file, chunk_size=5000):
 
 
 # ==========================================
-# 4. АНАЛІЗ
+# 4. АНАЛІЗ (ВИПРАВЛЕНИЙ)
 # ==========================================
 def analyze(df):
     results = {}
+
+    if 'timestamp' not in df.columns:
+        return results
+
+    # 🔥 гарантуємо правильний формат часу
+    df = df.copy()
+    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+    df = df.dropna(subset=['timestamp'])
 
     results['total'] = len(df)
 
@@ -112,13 +120,18 @@ def analyze(df):
     results['top_urls'] = df['url'].value_counts().head(10)
     results['methods'] = df['method'].value_counts()
 
-    results['hourly'] = df.resample('H', on='timestamp').size()
+    # 🔥 СТАБІЛЬНИЙ ресемплінг (виправлено)
+    df = df.set_index('timestamp')
+    results['hourly'] = df.resample('h').size()
+
+    # 🔁 Альтернатива (ще стабільніше):
+    # results['hourly'] = df.groupby(pd.Grouper(freq='h')).size()
 
     results['avg_size'] = df['size'].mean()
 
-    # аномалії
-    threshold = df['ip'].value_counts().mean() * 3
+    # 🚨 аномалії
     counts = df['ip'].value_counts()
+    threshold = counts.mean() * 3
     results['anomalies'] = counts[counts > threshold]
 
     return results
@@ -130,7 +143,6 @@ def analyze(df):
 st.set_page_config(page_title="Log Analyzer", layout="wide")
 st.title("🛡️ Розширений аналізатор мережевих логів")
 
-# Sidebar
 st.sidebar.header("⚙️ Керування")
 
 uploaded_file = st.sidebar.file_uploader("Завантаж лог-файл", type=["log", "txt"])
@@ -140,7 +152,6 @@ if st.sidebar.button("Згенерувати тестові дані"):
     st.session_state["df"] = df
     st.sidebar.success("Дані згенеровано!")
 
-# Логіка отримання даних
 df = None
 
 if uploaded_file:
@@ -150,43 +161,40 @@ if uploaded_file:
 elif "df" in st.session_state:
     df = st.session_state["df"]
 
+
 # ==========================================
 # 6. ВІДОБРАЖЕННЯ
 # ==========================================
 if df is not None and not df.empty:
     res = analyze(df)
 
-    # Метрики
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Запити", res['total'])
-    col2.metric("4xx", res['4xx'], f"{res['4xx']/res['total']:.1%}")
-    col3.metric("5xx", res['5xx'], f"{res['5xx']/res['total']:.1%}")
-    col4.metric("Сер. розмір", f"{res['avg_size']:.0f} B")
+    col1.metric("Запити", res.get('total', 0))
+    col2.metric("4xx", res.get('4xx', 0))
+    col3.metric("5xx", res.get('5xx', 0))
+    col4.metric("Сер. розмір", f"{res.get('avg_size', 0):.0f} B")
 
     st.divider()
 
-    # Графіки
     st.subheader("📊 Активність по часу")
-    st.line_chart(res['hourly'])
+    st.line_chart(res.get('hourly'))
 
     st.subheader("🌐 Топ IP")
-    st.bar_chart(res['top_ips'])
+    st.bar_chart(res.get('top_ips'))
 
     st.subheader("📄 Топ URL")
-    st.bar_chart(res['top_urls'])
+    st.bar_chart(res.get('top_urls'))
 
     st.subheader("⚙️ HTTP методи")
-    st.bar_chart(res['methods'])
+    st.bar_chart(res.get('methods'))
 
-    # Аномалії
     st.subheader("🚨 Підозрілі IP")
-    if not res['anomalies'].empty:
+    if not res.get('anomalies', pd.Series()).empty:
         st.warning("Виявлено аномальну активність")
         st.bar_chart(res['anomalies'])
     else:
         st.success("Аномалій не виявлено")
 
-    # Таблиця
     if st.checkbox("Показати дані"):
         st.dataframe(df.head(200), use_container_width=True)
 
