@@ -5,27 +5,20 @@ import random
 from datetime import datetime, timedelta
 import streamlit as st
 import seaborn as sns
+import plotly.express as px
+import time
 
 sns.set_theme(style="whitegrid")
 
 # ==========================================
-# 🎨 СТИЛІЗАЦІЯ
+# 🎨 СТИЛІ
 # ==========================================
 st.markdown("""
 <style>
 .main {background-color: #f5f7fb;}
 
-.title {
-    font-size: 40px;
-    font-weight: 700;
-    color: #2b2d42;
-}
-
-.subtitle {
-    font-size: 16px;
-    color: #6c757d;
-    margin-bottom: 20px;
-}
+.title {font-size: 40px; font-weight: 700; color: #2b2d42;}
+.subtitle {font-size: 16px; color: #6c757d; margin-bottom: 20px;}
 
 .metric-card {
     background: white;
@@ -35,16 +28,8 @@ st.markdown("""
     text-align: center;
 }
 
-.metric-title {
-    font-size: 14px;
-    color: gray;
-}
-
-.metric-value {
-    font-size: 28px;
-    font-weight: bold;
-    color: #2b2d42;
-}
+.metric-title {font-size: 14px; color: gray;}
+.metric-value {font-size: 28px; font-weight: bold; color: #2b2d42;}
 
 .block {
     background: white;
@@ -53,17 +38,11 @@ st.markdown("""
     box-shadow: 0 4px 12px rgba(0,0,0,0.05);
     margin-top: 20px;
 }
-
-.stButton>button {
-    border-radius: 10px;
-    height: 45px;
-    font-weight: 600;
-}
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. ГЕНЕРАЦІЯ ДАНИХ
+# 1. ГЕНЕРАЦІЯ
 # ==========================================
 def generate_logs(n=15000):
     ips = [f"192.168.0.{random.randint(1, 255)}" for _ in range(50)]
@@ -108,7 +87,6 @@ def parse_chunk(lines):
     for line in lines:
         if isinstance(line, bytes):
             line = line.decode('utf-8')
-
         match = log_pattern.search(line)
         if match:
             data.append(match.groupdict())
@@ -172,13 +150,12 @@ def analyze(df):
     return results
 
 # ==========================================
-# 5. UI
+# UI
 # ==========================================
-st.markdown('<div class="title">🛡️ Розширений аналізатор мережевих логів</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Агрегація та візуалізація логів (Pandas)</div>', unsafe_allow_html=True)
+st.markdown('<div class="title">🛡️ Аналізатор логів</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Анімований dashboard</div>', unsafe_allow_html=True)
 
-st.sidebar.header("⚙️ Керування")
-uploaded_file = st.sidebar.file_uploader("Завантаж лог-файл", type=["log", "txt"])
+uploaded_file = st.sidebar.file_uploader("Завантаж лог", type=["log","txt"])
 
 if st.sidebar.button("Згенерувати тестові дані"):
     st.session_state["df"] = generate_logs(20000)
@@ -191,46 +168,57 @@ elif "df" in st.session_state:
     df = st.session_state["df"]
 
 # ==========================================
-# 6. ВІДОБРАЖЕННЯ
+# DASHBOARD
 # ==========================================
 if df is not None and not df.empty:
     res = analyze(df)
 
-    col1, col2, col3, col4 = st.columns(4)
+    # Метрики
+    c1,c2,c3,c4 = st.columns(4)
+    c1.markdown(f"<div class='metric-card'><div class='metric-title'>Запити</div><div class='metric-value'>{res['total']}</div></div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='metric-card'><div class='metric-title'>4xx</div><div class='metric-value'>{res['4xx']}</div></div>", unsafe_allow_html=True)
+    c3.markdown(f"<div class='metric-card'><div class='metric-title'>5xx</div><div class='metric-value'>{res['5xx']}</div></div>", unsafe_allow_html=True)
+    c4.markdown(f"<div class='metric-card'><div class='metric-title'>Сер. розмір</div><div class='metric-value'>{res['avg_size']:.0f}</div></div>", unsafe_allow_html=True)
 
-    col1.markdown(f"<div class='metric-card'><div class='metric-title'>Запити</div><div class='metric-value'>{res['total']}</div></div>", unsafe_allow_html=True)
-    col2.markdown(f"<div class='metric-card'><div class='metric-title'>4xx</div><div class='metric-value'>{res['4xx']}</div></div>", unsafe_allow_html=True)
-    col3.markdown(f"<div class='metric-card'><div class='metric-title'>5xx</div><div class='metric-value'>{res['5xx']}</div></div>", unsafe_allow_html=True)
-    col4.markdown(f"<div class='metric-card'><div class='metric-title'>Сер. розмір</div><div class='metric-value'>{res['avg_size']:.0f} B</div></div>", unsafe_allow_html=True)
-
+    # 📊 Анімований графік
     st.markdown('<div class="block">', unsafe_allow_html=True)
-    st.subheader("📊 Активність")
-    st.line_chart(res['hourly'])
+    st.subheader("📊 Активність (анімація)")
+
+    df_plot = res['hourly'].reset_index()
+    df_plot.columns = ['time','requests']
+
+    fig = px.line(df_plot, x='time', y='requests')
+    fig.update_layout(transition_duration=500)
+
+    st.plotly_chart(fig, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="block">', unsafe_allow_html=True)
-    st.subheader("🌐 Топ IP")
-    st.bar_chart(res['top_ips'])
-    st.markdown('</div>', unsafe_allow_html=True)
+    # 🔴 LIVE режим
+    live = st.toggle("🔴 Live режим")
 
-    st.markdown('<div class="block">', unsafe_allow_html=True)
-    st.subheader("📄 Топ URL")
-    st.bar_chart(res['top_urls'])
-    st.markdown('</div>', unsafe_allow_html=True)
+    if live:
+        progress = st.progress(0)
+        chart = st.empty()
 
-    st.markdown('<div class="block">', unsafe_allow_html=True)
-    st.subheader("⚙️ Методи")
-    st.bar_chart(res['methods'])
-    st.markdown('</div>', unsafe_allow_html=True)
+        temp = df.sort_values("timestamp").set_index("timestamp")
 
+        step = max(len(temp)//20, 1)
+
+        for i in range(step, len(temp), step):
+            part = temp.iloc[:i]
+            series = part.resample('h').size()
+
+            chart.line_chart(series)
+            progress.progress(i/len(temp))
+            time.sleep(0.2)
+
+    # 🌐 IP
     st.markdown('<div class="block">', unsafe_allow_html=True)
-    st.subheader("🚨 Аномалії")
-    if not res['anomalies'].empty:
-        st.error("Виявлено підозрілу активність")
-        st.bar_chart(res['anomalies'])
-    else:
-        st.success("Аномалій не виявлено")
+    ip_df = res['top_ips'].reset_index()
+    ip_df.columns=['ip','count']
+    fig2 = px.bar(ip_df, x='ip', y='count')
+    st.plotly_chart(fig2, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 else:
-    st.info("⬅️ Завантаж файл або згенеруй тестові дані")
+    st.info("Завантаж файл або згенеруй дані")
