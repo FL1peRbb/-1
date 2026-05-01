@@ -9,7 +9,61 @@ import seaborn as sns
 sns.set_theme(style="whitegrid")
 
 # ==========================================
-# 1. ГЕНЕРАЦІЯ ТЕСТОВИХ ДАНИХ
+# 🎨 СТИЛІЗАЦІЯ
+# ==========================================
+st.markdown("""
+<style>
+.main {background-color: #f5f7fb;}
+
+.title {
+    font-size: 40px;
+    font-weight: 700;
+    color: #2b2d42;
+}
+
+.subtitle {
+    font-size: 16px;
+    color: #6c757d;
+    margin-bottom: 20px;
+}
+
+.metric-card {
+    background: white;
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    text-align: center;
+}
+
+.metric-title {
+    font-size: 14px;
+    color: gray;
+}
+
+.metric-value {
+    font-size: 28px;
+    font-weight: bold;
+    color: #2b2d42;
+}
+
+.block {
+    background: white;
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    margin-top: 20px;
+}
+
+.stButton>button {
+    border-radius: 10px;
+    height: 45px;
+    font-weight: 600;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 1. ГЕНЕРАЦІЯ ДАНИХ
 # ==========================================
 def generate_logs(n=15000):
     ips = [f"192.168.0.{random.randint(1, 255)}" for _ in range(50)]
@@ -33,7 +87,6 @@ def generate_logs(n=15000):
         })
 
     df = pd.DataFrame(data)
-
     df['method'] = df['method'].astype('category')
     df['url'] = df['url'].astype('category')
     df['status'] = df['status'].astype('int16')
@@ -41,9 +94,8 @@ def generate_logs(n=15000):
 
     return df
 
-
 # ==========================================
-# 2. ПАРСИНГ ЛОГІВ
+# 2. ПАРСИНГ
 # ==========================================
 log_pattern = re.compile(
     r'(?P<ip>\d+\.\d+\.\d+\.\d+) - - \[(?P<timestamp>.*?)\] '
@@ -53,7 +105,6 @@ log_pattern = re.compile(
 
 def parse_chunk(lines):
     data = []
-
     for line in lines:
         if isinstance(line, bytes):
             line = line.decode('utf-8')
@@ -63,7 +114,6 @@ def parse_chunk(lines):
             data.append(match.groupdict())
 
     df = pd.DataFrame(data)
-
     if df.empty:
         return df
 
@@ -72,15 +122,13 @@ def parse_chunk(lines):
     df['method'] = df['method'].astype('category')
     df['url'] = df['url'].astype('category')
 
-    # 🔥 ВАЖЛИВО: правильна обробка timestamp
     df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
     df = df.dropna(subset=['timestamp'])
 
     return df
 
-
 # ==========================================
-# 3. ЗАВАНТАЖЕННЯ ВЕЛИКИХ ФАЙЛІВ
+# 3. ЗАВАНТАЖЕННЯ
 # ==========================================
 def load_large_log(file, chunk_size=5000):
     chunks = []
@@ -96,71 +144,51 @@ def load_large_log(file, chunk_size=5000):
 
     return pd.DataFrame()
 
-
 # ==========================================
-# 4. АНАЛІЗ (ВИПРАВЛЕНИЙ)
+# 4. АНАЛІЗ
 # ==========================================
 def analyze(df):
-    results = {}
-
-    if 'timestamp' not in df.columns:
-        return results
-
-    # 🔥 гарантуємо правильний формат часу
     df = df.copy()
     df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
     df = df.dropna(subset=['timestamp'])
 
+    results = {}
     results['total'] = len(df)
-
     results['4xx'] = len(df[df['status'].between(400, 499)])
     results['5xx'] = len(df[df['status'].between(500, 599)])
-
     results['top_ips'] = df['ip'].value_counts().head(10)
     results['top_urls'] = df['url'].value_counts().head(10)
     results['methods'] = df['method'].value_counts()
 
-    # 🔥 СТАБІЛЬНИЙ ресемплінг (виправлено)
     df = df.set_index('timestamp')
     results['hourly'] = df.resample('h').size()
 
-    # 🔁 Альтернатива (ще стабільніше):
-    # results['hourly'] = df.groupby(pd.Grouper(freq='h')).size()
-
     results['avg_size'] = df['size'].mean()
 
-    # 🚨 аномалії
     counts = df['ip'].value_counts()
     threshold = counts.mean() * 3
     results['anomalies'] = counts[counts > threshold]
 
     return results
 
-
 # ==========================================
-# 5. STREAMLIT UI
+# 5. UI
 # ==========================================
-st.set_page_config(page_title="Log Analyzer", layout="wide")
-st.title("🛡️ Розширений аналізатор мережевих логів")
+st.markdown('<div class="title">🛡️ Розширений аналізатор мережевих логів</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Агрегація та візуалізація логів (Pandas)</div>', unsafe_allow_html=True)
 
 st.sidebar.header("⚙️ Керування")
-
 uploaded_file = st.sidebar.file_uploader("Завантаж лог-файл", type=["log", "txt"])
 
 if st.sidebar.button("Згенерувати тестові дані"):
-    df = generate_logs(20000)
-    st.session_state["df"] = df
-    st.sidebar.success("Дані згенеровано!")
+    st.session_state["df"] = generate_logs(20000)
 
 df = None
-
 if uploaded_file:
     df = load_large_log(uploaded_file)
     st.session_state["df"] = df
-
 elif "df" in st.session_state:
     df = st.session_state["df"]
-
 
 # ==========================================
 # 6. ВІДОБРАЖЕННЯ
@@ -169,34 +197,40 @@ if df is not None and not df.empty:
     res = analyze(df)
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Запити", res.get('total', 0))
-    col2.metric("4xx", res.get('4xx', 0))
-    col3.metric("5xx", res.get('5xx', 0))
-    col4.metric("Сер. розмір", f"{res.get('avg_size', 0):.0f} B")
 
-    st.divider()
+    col1.markdown(f"<div class='metric-card'><div class='metric-title'>Запити</div><div class='metric-value'>{res['total']}</div></div>", unsafe_allow_html=True)
+    col2.markdown(f"<div class='metric-card'><div class='metric-title'>4xx</div><div class='metric-value'>{res['4xx']}</div></div>", unsafe_allow_html=True)
+    col3.markdown(f"<div class='metric-card'><div class='metric-title'>5xx</div><div class='metric-value'>{res['5xx']}</div></div>", unsafe_allow_html=True)
+    col4.markdown(f"<div class='metric-card'><div class='metric-title'>Сер. розмір</div><div class='metric-value'>{res['avg_size']:.0f} B</div></div>", unsafe_allow_html=True)
 
-    st.subheader("📊 Активність по часу")
-    st.line_chart(res.get('hourly'))
+    st.markdown('<div class="block">', unsafe_allow_html=True)
+    st.subheader("📊 Активність")
+    st.line_chart(res['hourly'])
+    st.markdown('</div>', unsafe_allow_html=True)
 
+    st.markdown('<div class="block">', unsafe_allow_html=True)
     st.subheader("🌐 Топ IP")
-    st.bar_chart(res.get('top_ips'))
+    st.bar_chart(res['top_ips'])
+    st.markdown('</div>', unsafe_allow_html=True)
 
+    st.markdown('<div class="block">', unsafe_allow_html=True)
     st.subheader("📄 Топ URL")
-    st.bar_chart(res.get('top_urls'))
+    st.bar_chart(res['top_urls'])
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.subheader("⚙️ HTTP методи")
-    st.bar_chart(res.get('methods'))
+    st.markdown('<div class="block">', unsafe_allow_html=True)
+    st.subheader("⚙️ Методи")
+    st.bar_chart(res['methods'])
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.subheader("🚨 Підозрілі IP")
-    if not res.get('anomalies', pd.Series()).empty:
-        st.warning("Виявлено аномальну активність")
+    st.markdown('<div class="block">', unsafe_allow_html=True)
+    st.subheader("🚨 Аномалії")
+    if not res['anomalies'].empty:
+        st.error("Виявлено підозрілу активність")
         st.bar_chart(res['anomalies'])
     else:
         st.success("Аномалій не виявлено")
-
-    if st.checkbox("Показати дані"):
-        st.dataframe(df.head(200), use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 else:
     st.info("⬅️ Завантаж файл або згенеруй тестові дані")
